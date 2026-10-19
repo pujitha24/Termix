@@ -117,6 +117,30 @@ describe("plugin user data", () => {
     expect(again).toMatchObject({ imported: 0, skipped: 1 });
   });
 
+  it("exports a table whose key and secret columns are NOT NULL", async () => {
+    const strict = defineTable("strict_thing", {
+      credentialId: varchar(64).primaryKey().notNull(),
+      userId: refUser(),
+      secret: encryptedText().notNull(),
+      label: text(),
+    });
+    for (const statement of createTableSql("sqlite", "fixture", strict)) {
+      sqlite.exec(statement);
+    }
+    registerTable("fixture", strict);
+    sqlite.exec(`INSERT INTO p_fixture_strict_thing
+      (credential_id, user_id, secret, label) VALUES ('c1', 'u1', 'sealed', 'key')`);
+
+    const file = new Database(":memory:");
+    file.exec("CREATE TABLE users (id TEXT PRIMARY KEY)");
+    file.exec("CREATE TABLE ssh_data (id INTEGER PRIMARY KEY)");
+    file.exec("INSERT INTO users (id) VALUES ('u1')");
+    expect(await writeUserPluginTables(file, "u1")).toBe(2);
+    expect(file.prepare("SELECT * FROM p_fixture_strict_thing").all()).toEqual([
+      { credential_id: null, user_id: "u1", secret: null, label: "key" },
+    ]);
+  });
+
   it("exports and imports a table keyed by its user column", async () => {
     const keyed = defineTable("keyed", {
       userId: refUser().primaryKey(),

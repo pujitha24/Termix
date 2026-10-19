@@ -118,6 +118,34 @@ interface SqliteLike {
 const INSERT_CHUNK = 2000;
 
 /**
+ * The table as the export file declares it. Keys and secrets are left out of
+ * the rows, so a NOT NULL or PRIMARY KEY constraint on one would reject every
+ * insert; those columns stay, unconstrained and empty. An autoincrement id
+ * fills itself and is left alone.
+ */
+function exportDefinition(owned: UserOwnedTable): PluginTableDefinition {
+  const travelling = new Set(owned.columns);
+  return {
+    ...owned.definition,
+    columns: Object.fromEntries(
+      Object.entries(owned.definition.columns).map(([property, column]) => [
+        property,
+        travelling.has(columnName(property, column)) || column.type === "id"
+          ? column
+          : {
+              ...column,
+              notNull: false,
+              primaryKey: false,
+              unique: false,
+              defaultValue: undefined,
+              defaultNow: false,
+            },
+      ]),
+    ),
+  };
+}
+
+/**
  * Writes the user's plugin rows into a SQLite export file. One table at a
  * time, in chunked transactions with a yield between them: history tables
  * (command history, health checks) can hold many thousands of rows, and the
@@ -134,7 +162,7 @@ export async function writeUserPluginTables(
     for (const statement of createTableSql(
       "sqlite",
       owned.pluginId,
-      owned.definition,
+      exportDefinition(owned),
     )) {
       exportDb.exec(statement);
     }
